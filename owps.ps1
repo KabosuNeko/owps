@@ -88,15 +88,16 @@ function Switch-Item([string]$Path) {
     try {
         if (-not $Restore) {
             if (-not (Test-Path -LiteralPath $Path)) { return }
-            if (Test-Path -LiteralPath $off) { Write-Warning "  skip, already disabled copy exists: $off"; return }
             if (-not $PSCmdlet.ShouldProcess($Path, 'Disable')) { return }
+            # Both exist after a WPS repair/reinstall: the old backup is stale, the fresh copy becomes the backup.
+            if (Test-Path -LiteralPath $off) { Remove-Item -LiteralPath $off -Recurse -Force }
             Rename-Item -LiteralPath $Path -NewName ($leaf + $Suffix)
             Write-Host "  disabled $Path"
         } else {
             if (-not (Test-Path -LiteralPath $off)) { return }
-            if (Test-Path -LiteralPath $Path) { throw 'original name is taken (WPS re-installed it?)' }
             if (-not $PSCmdlet.ShouldProcess($Path, 'Restore')) { return }
-            Rename-Item -LiteralPath $off -NewName $leaf
+            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $off -Recurse -Force }  # WPS already has a live copy
+            else { Rename-Item -LiteralPath $off -NewName $leaf }
             Write-Host "  restored $Path"
         }
     } catch { $state.Failed++; Write-Warning "  FAILED $Path : $($_.Exception.Message)" }

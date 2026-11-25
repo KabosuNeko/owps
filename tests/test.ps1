@@ -91,6 +91,11 @@ try {
     $FakeProcs = @()
     & $script -Apply 3>&1 | Out-String | ForEach-Object { Check ($_ -notmatch 'FAILED|skip|abled ') 'second run is a clean no-op' }
 
+    # A WPS repair/reinstall of the same version puts the addon back next to our backup.
+    $null = New-Item -ItemType Directory "$new\office6\addons\kwhatsnew"; 'fresh' | Set-Content "$new\office6\addons\kwhatsnew\v.txt"
+    & $script -Apply | Out-Null
+    Check (-not (Test-Path "$new\office6\addons\kwhatsnew") -and (Test-Path "$new\office6\addons\kwhatsnew.owps-off\v.txt")) 'after a WPS repair, debloat disables the addon again'
+
     & $script -Restore | Out-Null
     Check (Test-Path "$new\office6\addons\kwhatsnew" -PathType Container) 'addon restored'
     Check (Test-Path "$old\office6\addons\kwhatsnew" -PathType Container) 'old version folder restored too'
@@ -98,6 +103,11 @@ try {
     Check (Test-Path "$pool\kpromotionstrategy_3.1.0.1\a.dll") 'pool addon restored, lock gone'
     Check (Test-Path "$pool\kwpsbubble_3.1.0.9" -PathType Container) 're-downloaded addon restored'
     Check ($extTask.State -eq 'Ready' -and $updateTask.State -eq 'Ready') 'tasks turned back on'
+
+    & $script -Apply | Out-Null
+    $null = New-Item -ItemType Directory "$new\office6\addons\kwhatsnew"   # repaired while disabled
+    $out = & $script -Restore 3>&1 6>&1 | Out-String
+    Check ((Test-Path "$new\office6\addons\kwhatsnew") -and -not (Test-Path "$new\office6\addons\kwhatsnew.owps-off") -and $out -notmatch 'FAILED') 'after a WPS repair, restore drops the stale backup'
     Check (-not (Get-ChildItem -Recurse $t -Force | Where-Object { $_.Name -like '*.owps-off' -or $_.Name -eq 'owps.lock' })) 'nothing left disabled'
 
     # Uninstalling WPS without restoring first must not strand undeletable locks.
