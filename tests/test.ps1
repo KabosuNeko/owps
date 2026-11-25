@@ -41,7 +41,10 @@ $otherTask  = T SomeOtherApp Ready 'C:\Other\app.exe' '/wpsupdate'
 $FakeTasks = @($updateTask, $extTask, $otherTask)
 function Get-ScheduledTask { $FakeTasks }
 function Enable-ScheduledTask { process { $_.State = 'Ready' } }
-function Disable-ScheduledTask { process { $_.State = 'Disabled' } }
+$Deny = @{ Tasks = $false }  # true: behave like a non-admin, whom WPS's task permissions refuse
+function Disable-ScheduledTask { process {
+    if ($Deny.Tasks) { Write-Error -Message 'Access is denied.' -Category PermissionDenied -ErrorId 'HRESULT 0x80070005' -ErrorAction Stop }
+    $_.State = 'Disabled' } }
 function Stop-ScheduledTask { process { } }
 
 function Check($cond, $msg) { if (-not $cond) { throw "FAIL: $msg" } else { Write-Host "ok  $msg" -ForegroundColor Green } }
@@ -55,6 +58,13 @@ try {
         Check (-not $Stopped) '  ...and stops no process'
     }
     Check (Test-Path "$new\office6\addons\kwhatsnew") 'nothing renamed while WPS was open'
+
+    # Without admin: addons still get disabled, the task is skipped with a clear hint, nothing counts as failed.
+    $FakeProcs = @(); $Deny.Tasks = $true
+    $out = & $script -Apply 3>&1 6>&1 | Out-String
+    $Deny.Tasks = $false
+    Check ($out -match 'Open PowerShell as administrator' -and $out -notmatch 'FAILED|Re-run after closing') 'non-admin gets the admin hint, not a failure'
+    Check ($extTask.State -eq 'Ready' -and (Test-Path "$new\office6\addons\kwhatsnew.owps-off")) '  ...task untouched, addons still disabled'
 
     $FakeProcs = @($cefRenderer, $aspcenter, $center); $Stopped.Clear()
     & $script -Apply | Out-Null

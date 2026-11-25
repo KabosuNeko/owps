@@ -6,7 +6,8 @@
   Every change is reversible: files/folders are renamed with the ".owps-off" suffix,
   scheduled tasks are disabled (not deleted). Run with -Restore to undo.
   Close all WPS windows first (the script refuses to run while WPS has documents open).
-  Without switches it shows a menu, which is what `irm <url> | iex` gets. No admin needed.
+  Without switches it shows a menu, which is what `irm <url> | iex` gets.
+  Run as admin: WPS's scheduled tasks can only be changed by admins. Everything else works without.
 
 .EXAMPLE
   irm https://raw.githubusercontent.com/KabosuNeko/owps/main/owps.ps1 | iex   # menu
@@ -60,7 +61,7 @@ if ($VerDirs) { Write-Host "WPS $($VerDirs[0].Name) at $Root" -ForegroundColor C
 elseif ($Restore) { Write-Host "WPS not installed, cleaning up leftovers only" -ForegroundColor Cyan }
 else { throw "WPS Office not found at $Root" }
 
-$state = @{ Failed = 0 }
+$state = @{ Failed = 0; NeedsAdmin = $false }
 
 # WPS also runs windowless helpers as `wps.exe Run -Entry=...` (CEF, cloud, aspcenter); those are safe to stop.
 # Anything else with an editor name is a real window that may hold unsaved documents: never kill it.
@@ -173,15 +174,23 @@ Get-ScheduledTask | Where-Object { $_.Actions | Where-Object { "$($_.Execute)".T
     $enable = $Restore -or ($_.Actions | Where-Object { "$($_.Arguments)" -match 'wpsupdate' })
     if ([bool]$enable -eq ($_.State -ne 'Disabled')) { return }  # already as wanted
     $act = if ($enable) { 'Enable' } else { 'Disable' }
-    if ($PSCmdlet.ShouldProcess($_.TaskName, "$act task")) {
+    $task = $_
+    if ($PSCmdlet.ShouldProcess($task.TaskName, "$act task")) {
         try {
-            if ($enable) { $null = $_ | Enable-ScheduledTask } else { $null = $_ | Stop-ScheduledTask; $null = $_ | Disable-ScheduledTask }
-            Write-Host "  ${act}d $($_.TaskName)"
-        } catch { $state.Failed++; Write-Warning "  FAILED $($_.TaskName): $($_.Exception.Message)" }
+            if ($enable) { $null = $task | Enable-ScheduledTask } else { $null = $task | Stop-ScheduledTask; $null = $task | Disable-ScheduledTask }
+            Write-Host "  ${act}d $($task.TaskName)"
+        } catch {
+            # WPS creates its tasks so that only admins can change them; re-running without admin never helps.
+            if ($_.CategoryInfo.Category -eq 'PermissionDenied' -or "$($_.FullyQualifiedErrorId)" -like '*0x80070005*') {
+                $state.NeedsAdmin = $true; Write-Warning "  $($task.TaskName): needs admin, skipped"
+            } else { $state.Failed++; Write-Warning "  FAILED $($task.TaskName): $($_.Exception.Message)" }
+        }
     }
 }
 
-if ($state.Failed) { Write-Host "`n$($state.Failed) item(s) failed, see warnings above. Re-run after closing WPS." -ForegroundColor Yellow; return }
+if ($state.NeedsAdmin) { Write-Host "`nWPS scheduled tasks can only be changed as admin. Open PowerShell as administrator and run again." -ForegroundColor Yellow }
+if ($state.Failed) { Write-Host "`n$($state.Failed) item(s) failed, see warnings above. Re-run after closing WPS." -ForegroundColor Yellow }
+if ($state.NeedsAdmin -or $state.Failed) { return }
 Write-Host "`nDone. $(if ($Restore) { 'Restored.' } else { 'Run with -Restore to undo.' })" -ForegroundColor Green
 }
 

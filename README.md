@@ -2,17 +2,19 @@
 
 Debloat WPS Office for Windows: ads, popups, tips, "what's new", message push and background tasks. Updates stay on, so WPS keeps getting security fixes.
 
-Every change can be undone. Files are renamed to `*.owps-off` and scheduled tasks are disabled, not deleted. No admin needed.
+Every change can be undone. Files are renamed to `*.owps-off` and scheduled tasks are disabled, not deleted.
 
 ## Usage
 
-Close every WPS window first, then in PowerShell:
+Close every WPS window first. Then open PowerShell **as administrator** and run:
 
 ```powershell
 irm https://raw.githubusercontent.com/KabosuNeko/owps/main/owps.ps1 | iex
 ```
 
 A menu opens: **[1]** debloat, **[2]** preview (changes nothing), **[3]** restore everything.
+
+Admin is only needed for the scheduled tasks: WPS creates them so that only admins can change them. Without admin, everything else still works and the script tells you which tasks it skipped.
 
 Run it again after WPS updates: an update installs a fresh copy with the ads back.
 
