@@ -16,7 +16,8 @@ foreach ($d in "$new\office6\addons\kwhatsnew", "$new\office6\addons\kwpsnote", 
                "$pool\kwpsbubble_3.1.0.9", "$pool\kwpsbubble_3.1.0.9.owps-off") {
     $null = New-Item -ItemType Directory -Force $d
 }
-'x' | Set-Content "$new\office6\wpscenter.exe"; 'x' | Set-Content "$new\wtoolex\wpsupdate.exe"; 'x' | Set-Content "$new\office6\wps.exe"
+'x' | Set-Content "$new\office6\wpscenter.exe"; 'x' | Set-Content "$new\office6\wps.exe"
+'x' | Set-Content "$new\wtoolex\wpsupdate.exe.owps-off"  # updater disabled by an older owps
 'dll' | Set-Content "$pool\kpromotionstrategy_3.1.0.1\a.dll"
 
 function Check($cond, $msg) { if (-not $cond) { throw "FAIL: $msg" } else { Write-Host "ok  $msg" -ForegroundColor Green } }
@@ -28,6 +29,7 @@ try {
     Check (Test-Path "$new\office6\addons\kwpsnote") 'other addon untouched'
     Check (Test-Path "$new\office6\wpscenter.exe.owps-off") 'wpscenter disabled'
     Check (Test-Path "$new\office6\wps.exe") 'wps.exe untouched'
+    Check ((Test-Path "$new\wtoolex\wpsupdate.exe") -and -not (Test-Path "$new\wtoolex\wpsupdate.exe.owps-off")) 'updater turned back on'
     Check (Test-Path "$pool\kpromotionstrategy_3.1.0.1.owps-off\a.dll") 'pool addon backed up'
     Check (Test-Path "$pool\kpromotionstrategy_3.1.0.1\owps.lock") 'pool addon locked'
     Check (Test-Path "$pool\kwpsbubble_3.1.0.9\owps.lock") 're-downloaded pool addon replaced by lock'

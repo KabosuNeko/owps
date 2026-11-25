@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  owps - debloat WPS Office (ads, popups, tips, updater, background tasks).
+  owps - debloat WPS Office (ads, popups, tips, background tasks). Updates stay on.
 
 .DESCRIPTION
   Every change is reversible: files/folders are renamed with the ".owps-off" suffix,
@@ -13,7 +13,7 @@
   .\owps.ps1                  # menu
   .\owps.ps1 -Apply           # debloat, no menu
   .\owps.ps1 -Apply -WhatIf   # preview, changes nothing
-  .\owps.ps1 -BlockNetwork    # debloat + firewall-block ad/update executables (needs admin)
+  .\owps.ps1 -BlockNetwork    # debloat + firewall-block background ad executables (needs admin)
   .\owps.ps1 -Restore         # undo everything
 #>
 [CmdletBinding(SupportsShouldProcess)]
@@ -47,11 +47,12 @@ $PoolAddons = @(
     'koperationstrategy', 'kpromotionstrategy', 'kwebstartupoperation', 'kwebdocumentoperation',
     'klearningtips', 'kstartguide', 'kwpsbubble', 'kpromeforceclosedlg'
 )
-# Executables: notification center + updaters.
-$Exes = @('office6\wpscenter.exe', 'wtoolex\wpsupdate.exe', 'wtoolex\updateself.exe', 'wtoolex\updatepolicy.exe')
+# Executables: the notification center.
+$Exes = @('office6\wpscenter.exe')
+# Updaters stay on so WPS gets security fixes. Older owps versions disabled them, so debloat turns them back on.
+$Updaters = @('wtoolex\wpsupdate.exe', 'wtoolex\updateself.exe', 'wtoolex\updatepolicy.exe')
 # Blocked from the internet with -BlockNetwork (wps/et/wpp keep network for cloud/login).
-$NetExes = @('office6\wpscenter.exe', 'office6\wpscloudsvr.exe', 'office6\promecefpluginhost.exe',
-             'wtoolex\wpsupdate.exe', 'wtoolex\updateself.exe', 'wtoolex\updatepolicy.exe')
+$NetExes = @('office6\wpscenter.exe', 'office6\wpscloudsvr.exe', 'office6\promecefpluginhost.exe')
 
 $Root = Join-Path $env:LOCALAPPDATA 'Kingsoft\WPS Office'
 $Pool = Join-Path $env:APPDATA 'kingsoft\wps_intl\addons\pool'
@@ -80,7 +81,7 @@ if ($editors) {
     if ($WhatIfPreference) { Write-Warning 'WPS is open (fine for -WhatIf; close it before the real run).' }
     else { throw 'WPS is open. Save your work, close every WPS window, then run again.' }
 }
-@($helpers) + @(Get-Process wpscenter, wpscloudsvr, promecefpluginhost, wpsupdate, updateself -ErrorAction SilentlyContinue) |
+@($helpers) + @(Get-Process wpscenter, wpscloudsvr, promecefpluginhost -ErrorAction SilentlyContinue) |
     Where-Object { $_ -and $_.Path -like '*\Kingsoft\*' } | ForEach-Object {
         if ($PSCmdlet.ShouldProcess("$($_.Name) ($($_.Id))", 'Stop process')) {
             try { Stop-Process -Id $_.Id -Force } catch { Write-Warning "  cannot stop $($_.Name): $_" }
@@ -165,6 +166,8 @@ Write-Host 'Built-in addons and executables:' -ForegroundColor Cyan
 foreach ($v in $(if ($Restore) { $VerDirs } else { $VerDirs[0] })) {
     $Addons | ForEach-Object { Switch-Item (Join-Path $v.FullName "office6\addons\$_") }
     $Exes | ForEach-Object { Switch-Item (Join-Path $v.FullName $_) }
+    # Switch-Item reads $Restore; setting it in this child scope only turns the updaters back on.
+    & { $Restore = $true; $Updaters | ForEach-Object { Switch-Item (Join-Path $v.FullName $_) } }
 }
 
 Write-Host 'Downloaded addons:' -ForegroundColor Cyan
@@ -178,12 +181,14 @@ if (Test-Path -LiteralPath $Pool) {
 }
 
 Write-Host 'Scheduled tasks:' -ForegroundColor Cyan
-# Only tasks whose action runs something from the WPS folder.
+# Only tasks whose action runs something from the WPS folder. Update tasks stay (or are turned back) on.
 Get-ScheduledTask | Where-Object { $_.Actions | Where-Object { "$($_.Execute)".Trim('"') -like "$Root\*" } } | ForEach-Object {
-    $act = if ($Restore) { 'Enable' } else { 'Disable' }
+    $enable = $Restore -or ($_.Actions | Where-Object { "$($_.Arguments)" -match 'wpsupdate' })
+    if ([bool]$enable -eq ($_.State -ne 'Disabled')) { return }  # already as wanted
+    $act = if ($enable) { 'Enable' } else { 'Disable' }
     if ($PSCmdlet.ShouldProcess($_.TaskName, "$act task")) {
         try {
-            if ($Restore) { $null = $_ | Enable-ScheduledTask } else { $null = $_ | Stop-ScheduledTask; $null = $_ | Disable-ScheduledTask }
+            if ($enable) { $null = $_ | Enable-ScheduledTask } else { $null = $_ | Stop-ScheduledTask; $null = $_ | Disable-ScheduledTask }
             Write-Host "  ${act}d $($_.TaskName)"
         } catch { $state.Failed++; Write-Warning "  FAILED $($_.TaskName): $($_.Exception.Message)" }
     }
