@@ -6,16 +6,30 @@ Every change can be undone. Files are renamed to `*.owps-off` and scheduled task
 
 ## Usage
 
-Close every WPS window first, then in PowerShell:
+Close every WPS window first. Then open PowerShell **as administrator** and run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\owps.ps1 -WhatIf        # preview only
-powershell -ExecutionPolicy Bypass -File .\owps.ps1                # debloat
-powershell -ExecutionPolicy Bypass -File .\owps.ps1 -BlockNetwork  # + firewall-block ad/update exes (admin)
-powershell -ExecutionPolicy Bypass -File .\owps.ps1 -Restore       # undo
+irm https://raw.githubusercontent.com/KabosuNeko/owps/main/owps.ps1 | iex
 ```
 
-The service and firewall steps need an admin PowerShell. Without admin, the script skips them.
+A menu opens: debloat, debloat + block network, preview, or restore.
+
+Without admin, the script still works but skips the service and firewall steps.
+
+### Without the menu
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/KabosuNeko/owps/main/owps.ps1))) -Apply
+```
+
+Or from a local copy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\owps.ps1 -Apply -WhatIf     # preview only
+powershell -ExecutionPolicy Bypass -File .\owps.ps1 -Apply             # debloat
+powershell -ExecutionPolicy Bypass -File .\owps.ps1 -BlockNetwork      # + firewall-block ad/update exes (admin)
+powershell -ExecutionPolicy Bypass -File .\owps.ps1 -Restore           # undo
+```
 
 ## What it does
 

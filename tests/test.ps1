@@ -23,7 +23,7 @@ function Check($cond, $msg) { if (-not $cond) { throw "FAIL: $msg" } else { Writ
 function Fails([scriptblock]$b) { try { & $b; $false } catch { $true } }
 
 try {
-    & $script | Out-Null
+    & $script -Apply | Out-Null
     Check (Test-Path "$new\office6\addons\kwhatsnew.owps-off") 'ad addon disabled'
     Check (Test-Path "$new\office6\addons\kwpsnote") 'other addon untouched'
     Check (Test-Path "$new\office6\wpscenter.exe.owps-off") 'wpscenter disabled'
@@ -40,7 +40,7 @@ try {
     Check (Fails { Set-Content -LiteralPath "$lock\download.7z" -Value 'x' }) 'nothing can be written into the lock'
     Check (Test-Path "$lock\owps.lock") 'lock still in place'
 
-    & $script 3>&1 | Out-String | ForEach-Object { Check ($_ -notmatch 'FAILED|skip') 'second run is a clean no-op' }
+    & $script -Apply 3>&1 | Out-String | ForEach-Object { Check ($_ -notmatch 'FAILED|skip') 'second run is a clean no-op' }
 
     & $script -Restore | Out-Null
     Check (Test-Path "$new\office6\addons\kwhatsnew" -PathType Container) 'addon restored'

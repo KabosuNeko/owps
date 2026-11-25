@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   owps - debloat WPS Office (ads, popups, tips, updater, background tasks).
 
@@ -6,19 +6,30 @@
   Every change is reversible: files/folders are renamed with the ".owps-off" suffix,
   scheduled tasks are disabled (not deleted). Run with -Restore to undo.
   Close all WPS windows first (the script refuses to run while WPS has documents open).
+  Without switches it shows a menu, which is what `irm <url> | iex` gets.
 
 .EXAMPLE
-  .\owps.ps1 -WhatIf          # preview, changes nothing
-  .\owps.ps1                  # debloat
-  .\owps.ps1 -BlockNetwork    # also firewall-block ad/update executables (needs admin)
+  irm https://raw.githubusercontent.com/KabosuNeko/owps/main/owps.ps1 | iex   # menu
+  .\owps.ps1                  # menu
+  .\owps.ps1 -Apply           # debloat, no menu
+  .\owps.ps1 -Apply -WhatIf   # preview, changes nothing
+  .\owps.ps1 -BlockNetwork    # debloat + firewall-block ad/update executables (needs admin)
   .\owps.ps1 -Restore         # undo everything
 #>
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [switch]$Apply,
+    [switch]$Restore,
+    [switch]$BlockNetwork
+)
+
+# Everything lives in a function: under `irm | iex` the script has no $PSCmdlet of its own.
+function Invoke-Owps {
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [switch]$Restore,
     [switch]$BlockNetwork
 )
-
 $ErrorActionPreference = 'Stop'
 $Suffix = '.owps-off'
 $FwPrefix = 'owps-block-'
@@ -56,7 +67,7 @@ Write-Host "WPS $($VerDirs[0].Name) at $Root" -ForegroundColor Cyan
 
 $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
-$Failed = 0
+$state = @{ Failed = 0 }
 
 # WPS also runs windowless helpers as `wps.exe Run -Entry=...` (CEF, cloud, aspcenter); those are safe to stop.
 # Anything else with an editor name is a real window that may hold unsaved documents: never kill it.
@@ -94,7 +105,7 @@ function Switch-Item([string]$Path) {
             Rename-Item -LiteralPath $off -NewName $leaf
             Write-Host "  restored $Path"
         }
-    } catch { $script:Failed++; Write-Warning "  FAILED $Path : $($_.Exception.Message)" }
+    } catch { $state.Failed++; Write-Warning "  FAILED $Path : $($_.Exception.Message)" }
 }
 
 # Downloaded addons come back within seconds (WPS deletes any plain placeholder and re-downloads),
@@ -146,7 +157,7 @@ function Switch-PoolItem([string]$Path) {
             }
             Write-Host "  restored $Path"
         }
-    } catch { $script:Failed++; Write-Warning "  FAILED $Path : $($_.Exception.Message)" }
+    } catch { $state.Failed++; Write-Warning "  FAILED $Path : $($_.Exception.Message)" }
 }
 
 Write-Host 'Built-in addons and executables:' -ForegroundColor Cyan
@@ -174,7 +185,7 @@ Get-ScheduledTask | Where-Object { $_.Actions | Where-Object { "$($_.Execute)".T
         try {
             if ($Restore) { $null = $_ | Enable-ScheduledTask } else { $null = $_ | Stop-ScheduledTask; $null = $_ | Disable-ScheduledTask }
             Write-Host "  ${act}d $($_.TaskName)"
-        } catch { $script:Failed++; Write-Warning "  FAILED $($_.TaskName): $($_.Exception.Message)" }
+        } catch { $state.Failed++; Write-Warning "  FAILED $($_.TaskName): $($_.Exception.Message)" }
     }
 }
 
@@ -187,7 +198,7 @@ else {
         try {
             if (-not $Restore) { Stop-Service wpscloudsvr -Force -ErrorAction SilentlyContinue }
             Set-Service wpscloudsvr -StartupType $mode; Write-Host "  startup = $mode"
-        } catch { $script:Failed++; Write-Warning "  FAILED: $($_.Exception.Message)" }
+        } catch { $state.Failed++; Write-Warning "  FAILED: $($_.Exception.Message)" }
     }
 }
 
@@ -216,5 +227,38 @@ if ($BlockNetwork -or $Restore) {
     }
 }
 
-if ($Failed) { Write-Host "`n$Failed item(s) failed, see warnings above. Re-run after closing WPS." -ForegroundColor Yellow; exit 1 }
+if ($state.Failed) { Write-Host "`n$($state.Failed) item(s) failed, see warnings above. Re-run after closing WPS." -ForegroundColor Yellow; return }
 Write-Host "`nDone. $(if ($Restore) { 'Restored.' } else { 'Run with -Restore to undo.' })" -ForegroundColor Green
+}
+
+function Show-OwpsMenu {
+    $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+    while ($true) {
+        Write-Host ''
+        Write-Host '  owps - WPS Office debloat' -ForegroundColor Cyan
+        if (-not $admin) { Write-Host '  (not admin: the service and firewall steps will be skipped)' -ForegroundColor Yellow }
+        Write-Host '  [1] Debloat'
+        Write-Host '  [2] Debloat + block internet for background exes (admin)'
+        Write-Host '  [3] Preview, change nothing'
+        Write-Host '  [4] Restore everything'
+        Write-Host '  [0] Exit'
+        $choice = Read-Host '  Choose'
+        try {
+            switch ($choice) {
+                '1' { Invoke-Owps }
+                '2' { Invoke-Owps -BlockNetwork }
+                '3' { Invoke-Owps -WhatIf }
+                '4' { Invoke-Owps -Restore }
+                '0' { return }
+            }
+        } catch { Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red }
+    }
+}
+
+if ($Apply -or $Restore -or $BlockNetwork -or $WhatIfPreference) {
+    $opts = @{} + $PSBoundParameters; $opts.Remove('Apply')
+    Invoke-Owps @opts
+} else {
+    Show-OwpsMenu
+}
